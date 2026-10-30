@@ -1,0 +1,11 @@
+.DS_Store
+*.wav
+*.aif
+*.aiff
+*.flac
+*.mp3
+*.m4a
+sessions/*/
+!sessions/.gitkeep
+references/*
+!references/.gitkeep
