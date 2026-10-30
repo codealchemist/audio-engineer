@@ -33,6 +33,11 @@ The default key commands below are the usual ones. If a shortcut does nothing, u
    the file name (`mix.wav` or `master.wav`). Confirm **Replace** when asked. Overwriting the same name every iteration is intentional.
 5. Run `node tools/wait-bounce.mjs <path> --since <time>` until it prints `Ready`.
 
+**Each track has its own bounce folder** (`sessions/<song>/bounces/`). Logic remembers the last folder across projects, so
+the first bounce of a new track opens in the *previous* track's folder. Before that first bounce, point the save panel at
+the current track's folder (full-screen control, ⇧⌘G). If it lands elsewhere anyway, move only that file into the current
+track's folder right after the bounce. Never leave a track's files in another track's folder.
+
 **The bounce range follows the region selection** (when cycle is off). Before every ⌘B, click empty space in the tracks
 area and press ⌘A (or Edit › Select › All), then check Start/End and the time match the baseline (e.g. 1 1 1 1 → 64 1 1 1, 3:09).
 A partial selection gives a shorter bounce and makes iterations incomparable.

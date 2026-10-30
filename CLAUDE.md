@@ -8,6 +8,7 @@ reference track and no issues remain.
 
 | Skill | Use it for |
 | --- | --- |
+| `album` | the album: which track is next, its folder and settings, progress per track (`sessions/album.md`) |
 | `mix-loop` | the mixing stage: bounce → analyze → fix tracks → repeat until converged |
 | `master-loop` | the mastering stage on the Stereo Out: correction EQ, glue, limiter to a loudness target |
 | `logic-pro` | operating Logic through computer use: bounce, mixer, plugins, loading presets, safety rules |
@@ -26,6 +27,7 @@ reference track and no issues remain.
 
 ## Layout
 
+- `sessions/album.md`: album folder, shared reference/genre/target and the status of every track (from `templates/album.md`)
 - `sessions/<song>/session.md`: setup, track map and change history (from `templates/session.md`)
 - `sessions/<song>/bounces/`: `mix.wav` and `master.wav`, overwritten every iteration
 - `sessions/<song>/{mix,master}/iter-NN/`: `analysis.json` and `report.txt`; `log.md` holds the iteration table

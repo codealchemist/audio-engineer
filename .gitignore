@@ -5,7 +5,7 @@
 *.flac
 *.mp3
 *.m4a
-sessions/*/
+sessions/*
 !sessions/.gitkeep
 references/*
 !references/.gitkeep
