@@ -42,10 +42,12 @@ track's folder right after the bounce. Never leave a track's files in another tr
 area and press ⌘A (or Edit › Select › All), then check Start/End and the time match the baseline (e.g. 1 1 1 1 → 64 1 1 1, 3:09).
 A partial selection gives a shorter bounce and makes iterations incomparable.
 
+**Never press ⌘A in a Mixer dB field.** It selects every channel strip instead of the text, and the next typed value then moves all selected faders by the same amount (Stereo Out included). A double-click already selects the field's text: double-click, type, Return. If it happens, use Edit › Deselect All first, because every later edit stays relative while the strips are selected. Don't trust Mixer Undo to put it right, and don't use plain ⌘Z in the Mixer (it can undo a plug-in insert): compare every strip with the logged values and retype what differs, one strip at a time.
+
 **Which control mode to use:** background (`app_*`) control is enough for bypass buttons, faders (double-click the
 **inspector's** dB field, `app_type` with `overwrite_existing`, then click elsewhere to commit) and menus. It is *not*
 enough for plugin parameters (clicks and scrolls jump or toggle slider values), insert-slot menus, preset menus or the
-save panel. For those, ask for full-screen control once (`request_full_control`), then double-click a value, ⌘A, type
+save panel. For those, ask for full-screen control once (`request_full_control`), then double-click a value, type
 it (comma decimal in this locale, e.g. `-1,5`), Return. In full-screen mode ⇧⌘G works in the save panel, and Logic
 then remembers the folder for later bounces. Clicking a plugin's **Compare** button restores its last-saved settings,
 which is useful for backing out an accidental edit. Prefer a plugin's output gain over the fader on tracks with volume automation.
