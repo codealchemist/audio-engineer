@@ -56,5 +56,7 @@ Once a track is released, offer to clean up its session folder before moving on,
 Keep `session.md`, the `mix/` and `master/` logs, `mix-final.wav`, `master-final.wav`, any `backup/release-*` file and
 anything the project uses (such as scripts loaded in Logic). Test bounces, A/B clips, alternative masters and web proxies can go.
 
+When every track is released, offer `publish-album` to fill the album's `_master` and `_mp3` folders.
+
 "Continue" carries on with the track in progress if there is one. The user decides when to move to the next track,
 and creative changes (instrument swaps, expression) are only made when the user asks for them.
