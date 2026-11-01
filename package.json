@@ -1,6 +1,6 @@
 {
   "name": "audio-engineer",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Claude Code skills and tools for iterative mixing and mastering in Logic Pro with Mixdown Report.",
   "private": true,
   "type": "module",
