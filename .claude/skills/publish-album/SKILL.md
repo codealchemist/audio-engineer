@@ -1,6 +1,6 @@
 ---
 name: publish-album
-description: Prepare a finished album's publishing folders. Copies every song's approved master to _master/<song>.wav at the album root and encodes each one to _mp3/<song>.mp3 (320 kbps) and flac/<song>.flac (lossless). Use when the user asks to publish, prepare, package or export an album, to convert its masters to FLAC or MP3, or to fill its _master, _mp3 or flac folders.
+description: Prepare a finished album's publishing folders. Copies every song's approved master to _master/<song>.wav at the album root and encodes each one to _mp3/<song>.mp3 (320 kbps) and _master/flac/<song>.flac (lossless). Use when the user asks to publish, prepare, package or export an album, to convert its masters to FLAC or MP3, or to fill its _master, _master/flac or _mp3 folders.
 ---
 
 # Publishing an album
@@ -9,9 +9,9 @@ Run this after the album's tracks are released (`album` skill, `master-loop` ›
 track's status are in `sessions/album.md`. If the user names another album, use that folder instead.
 
 ```
-<album folder>/_master/PR09-01-randomness.wav   exact copy of PR09-01-randomness/release/PR09-01-randomness.wav
-<album folder>/_mp3/PR09-01-randomness.mp3      320 kbps CBR, encoded from the file in _master
-<album folder>/flac/PR09-01-randomness.flac     lossless, same bit depth and sample rate as the file in _master
+<album folder>/_master/PR09-01-randomness.wav         exact copy of PR09-01-randomness/release/PR09-01-randomness.wav
+<album folder>/_master/flac/PR09-01-randomness.flac   lossless, same bit depth and sample rate as the WAV in _master
+<album folder>/_mp3/PR09-01-randomness.mp3            320 kbps CBR, encoded from the WAV in _master
 ```
 
 ## Steps
@@ -31,6 +31,6 @@ track's status are in `sessions/album.md`. If the user names another album, use 
 
 - `<song>` is the song folder's name, the one that holds `<song>.logicx`. Folders starting with `_` are skipped.
 - Never edit the masters, and never change a release file here. If a master needs fixing, go back to `master-loop`.
-- The tool never deletes anything. It reports other files in `_master`, `_mp3` and `flac`; ask before removing any.
+- The tool never deletes anything. It reports other files in `_master`, `_master/flac` and `_mp3`; ask before removing any.
 - An MP3 or FLAC older than its master is encoded again, so re-running after a `--replace` brings both folders up to date.
 - A true peak warning (above −0.5 dBTP) means the MP3 may clip when decoded. Report it to the user. Don't change the file.

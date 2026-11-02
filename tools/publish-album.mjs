@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Prepares an album's publishing folders: copies every song's release/<song>.wav to _master/<song>.wav,
- * then encodes each _master/*.wav to _mp3/<name>.mp3 (320 kbps CBR) and flac/<name>.flac (lossless, same
+ * then encodes each _master/*.wav to _mp3/<name>.mp3 (320 kbps CBR) and _master/flac/<name>.flac (lossless, same
  * bit depth and sample rate). Nothing is copied if a song has no release file. A different file already in
  * _master is never overwritten without --replace. Encoded files older than their master are encoded again,
  * and only files made in this run are checked. Other files in the folders are reported and left alone.
@@ -12,7 +12,7 @@
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import { parseFlags } from './lib.mjs';
 
 const MP3_BITRATE = 320;
@@ -56,7 +56,7 @@ if (!songs.length) throw new Error(`No song folders in ${album}. A song folder h
 
 const masterDir = join(album, '_master');
 const mp3Dir = join(album, '_mp3');
-const flacDir = join(album, 'flac');
+const flacDir = join(masterDir, 'flac');
 const FORMATS = [
   { ext: 'mp3', dir: mp3Dir, args: ['-c:a', 'libmp3lame', '-b:a', `${MP3_BITRATE}k`, '-id3v2_version', '3'] },
   { ext: 'flac', dir: flacDir, args: ['-c:a', 'flac', '-compression_level', '8'] },
@@ -137,8 +137,8 @@ for (const { name, ext, source, output } of made) {
 if (rows.length) console.log(`\n${rows.join('\n')}`);
 
 const extras = [
-  ...(existsSync(masterDir) ? readdirSync(masterDir).filter((f) => !f.startsWith('.') && !songs.includes(basename(f, '.wav'))).map((f) => `_master/${f}`) : []),
-  ...FORMATS.flatMap(({ ext, dir }) => (existsSync(dir) ? readdirSync(dir).filter((f) => !f.startsWith('.') && !names.includes(`${basename(f, `.${ext}`)}.wav`)).map((f) => `${basename(dir)}/${f}`) : [])),
+  ...(existsSync(masterDir) ? readdirSync(masterDir).filter((f) => !f.startsWith('.') && f !== 'flac' && !songs.includes(basename(f, '.wav'))).map((f) => `_master/${f}`) : []),
+  ...FORMATS.flatMap(({ ext, dir }) => (existsSync(dir) ? readdirSync(dir).filter((f) => !f.startsWith('.') && !names.includes(`${basename(f, `.${ext}`)}.wav`)).map((f) => `${relative(album, dir)}/${f}`) : [])),
 ];
 if (extras.length) console.log(`\nLeft alone, not from this album's songs: ${extras.join(', ')}`);
 
