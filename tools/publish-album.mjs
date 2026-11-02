@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
  * Prepares an album's publishing folders: copies every song's release/<song>.wav to _master/<song>.wav,
- * then encodes each _master/*.wav to _mp3/<name>.mp3 (320 kbps CBR, same sample rate). Nothing is copied
- * if a song has no release file. A different file already in _master is never overwritten without --replace.
- * MP3s older than their master are re-encoded. Other files in both folders are reported and left alone.
+ * then encodes each _master/*.wav to _mp3/<name>.mp3 (320 kbps CBR) and flac/<name>.flac (lossless, same
+ * bit depth and sample rate). Nothing is copied if a song has no release file. A different file already in
+ * _master is never overwritten without --replace. Encoded files older than their master are encoded again,
+ * and only files made in this run are checked. Other files in the folders are reported and left alone.
  *
  *   node tools/publish-album.mjs <album folder> [--dry-run] [--replace]
  * Exit code: 0 done, 1 problem.
@@ -43,6 +44,7 @@ const truePeak = (file) => {
   const peak = stderr.split('True peak:').pop().match(/Peak:\s+(-?[\d.]+|-?inf)/);
   return peak ? Number(peak[1].replace('inf', 'Infinity')) : NaN;
 };
+const audioHash = (file) => run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', file, '-map', '0:a', '-c:a', 'pcm_s32le', '-f', 'md5', '-']).stdout.trim();
 const sameFile = (a, b) => statSync(a).size === statSync(b).size && readFileSync(a).equals(readFileSync(b));
 const clock = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
 const wavsIn = (dir) => (existsSync(dir) ? readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.wav')).sort() : []);
@@ -54,6 +56,11 @@ if (!songs.length) throw new Error(`No song folders in ${album}. A song folder h
 
 const masterDir = join(album, '_master');
 const mp3Dir = join(album, '_mp3');
+const flacDir = join(album, 'flac');
+const FORMATS = [
+  { ext: 'mp3', dir: mp3Dir, args: ['-c:a', 'libmp3lame', '-b:a', `${MP3_BITRATE}k`, '-id3v2_version', '3'] },
+  { ext: 'flac', dir: flacDir, args: ['-c:a', 'flac', '-compression_level', '8'] },
+];
 const dryRun = flags['dry-run'];
 
 // Check everything first, so a problem leaves the folders untouched.
@@ -74,7 +81,7 @@ if (problems.length) {
   process.exit(1);
 }
 
-if (!dryRun) { mkdirSync(masterDir, { recursive: true }); mkdirSync(mp3Dir, { recursive: true }); }
+if (!dryRun) { mkdirSync(masterDir, { recursive: true }); for (const { dir } of FORMATS) mkdirSync(dir, { recursive: true }); }
 for (const { song, source, target } of toCopy) {
   if (dryRun) { console.log(`would copy    ${song}.wav`); continue; }
   copyFileSync(source, target);
@@ -84,47 +91,55 @@ for (const { song, source, target } of toCopy) {
 
 const names = [...new Set([...wavsIn(masterDir), ...toCopy.map(({ song }) => `${song}.wav`)])].sort();
 let encoded = 0, warnings = 0;
-const rows = [];
+const made = [];
 for (const wav of names) {
   const name = basename(wav, '.wav');
   const source = join(masterDir, wav);
-  const mp3 = join(mp3Dir, `${name}.mp3`);
   const copying = toCopy.some(({ song }) => `${song}.wav` === wav);
-  if (existsSync(mp3) && !copying && statSync(mp3).mtimeMs >= statSync(source).mtimeMs) continue;
-  if (dryRun) { console.log(`would encode  ${name}.mp3`); encoded++; continue; }
-  const temp = join(mp3Dir, `.${name}.partial.mp3`); // a stopped encode must not look like a finished MP3
-  try {
-    run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', source, '-map', '0:a', '-map_metadata', '-1',
-      '-c:a', 'libmp3lame', '-b:a', `${MP3_BITRATE}k`, '-id3v2_version', '3', temp]);
-    renameSync(temp, mp3);
-  } finally {
-    rmSync(temp, { force: true });
+  for (const { ext, dir, args } of FORMATS) {
+    const output = join(dir, `${name}.${ext}`);
+    if (existsSync(output) && !copying && statSync(output).mtimeMs >= statSync(source).mtimeMs) continue;
+    encoded++;
+    if (dryRun) { console.log(`would encode  ${name}.${ext}`); continue; }
+    const temp = join(dir, `.${name}.partial.${ext}`); // a stopped encode must not look like a finished file
+    try {
+      run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', source, '-map', '0:a', '-map_metadata', '-1', ...args, temp]);
+      renameSync(temp, output);
+    } finally {
+      rmSync(temp, { force: true });
+    }
+    made.push({ name, ext, source, output });
+    console.log(`encoded       ${name}.${ext}`);
   }
-  encoded++;
-  console.log(`encoded       ${name}.mp3`);
 }
 
-if (!dryRun) {
-  for (const wav of names) {
-    const name = basename(wav, '.wav');
-    const master = probe(join(masterDir, wav));
-    const mp3 = probe(join(mp3Dir, `${name}.mp3`));
-    const peak = truePeak(join(mp3Dir, `${name}.mp3`));
-    const issues = [];
-    if (Math.abs(master.duration - mp3.duration) > MAX_LENGTH_DIFF) issues.push(`length differs from master by ${Math.abs(master.duration - mp3.duration).toFixed(2)} s`);
-    if (mp3.sampleRate !== master.sampleRate) issues.push(`sample rate ${mp3.sampleRate} Hz vs master ${master.sampleRate} Hz`);
-    if (Math.abs(mp3.bitRate / 1000 - MP3_BITRATE) > 5) issues.push(`bitrate ${Math.round(mp3.bitRate / 1000)} kbps`);
+const rows = [];
+for (const { name, ext, source, output } of made) {
+  const master = probe(source);
+  const file = probe(output);
+  const issues = [];
+  let detail;
+  if (Math.abs(master.duration - file.duration) > MAX_LENGTH_DIFF) issues.push(`length differs from master by ${Math.abs(master.duration - file.duration).toFixed(2)} s`);
+  if (file.sampleRate !== master.sampleRate) issues.push(`sample rate ${file.sampleRate} Hz vs master ${master.sampleRate} Hz`);
+  if (ext === 'mp3') {
+    const peak = truePeak(output);
+    if (Math.abs(file.bitRate / 1000 - MP3_BITRATE) > 5) issues.push(`bitrate ${Math.round(file.bitRate / 1000)} kbps`);
     if (peak > PEAK_WARNING) issues.push(`true peak ${peak.toFixed(1)} dBTP`);
-    warnings += issues.length;
-    rows.push(`${name.padEnd(30)} ${clock(master.duration).padStart(5)}  ${master.bits}-bit ${master.sampleRate} Hz  MP3 ${Math.round(mp3.bitRate / 1000)} kbps, ${peak.toFixed(1)} dBTP${issues.length ? `  WARNING: ${issues.join('; ')}` : ''}`);
+    detail = `${Math.round(file.bitRate / 1000)} kbps, ${peak.toFixed(1)} dBTP`;
+  } else {
+    const identical = audioHash(source) === audioHash(output);
+    if (!identical) issues.push("audio doesn't match the master");
+    detail = `${Math.round(file.bitRate / 1000)} kbps, ${identical ? 'audio identical to master' : 'audio differs'}`;
   }
-  console.log(`\n${rows.join('\n')}`);
+  warnings += issues.length;
+  rows.push(`${`${name}.${ext}`.padEnd(30)} ${clock(master.duration).padStart(5)}  ${master.bits}-bit ${master.sampleRate} Hz  ${detail}${issues.length ? `  WARNING: ${issues.join('; ')}` : ''}`);
 }
+if (rows.length) console.log(`\n${rows.join('\n')}`);
 
 const extras = [
   ...(existsSync(masterDir) ? readdirSync(masterDir).filter((f) => !f.startsWith('.') && !songs.includes(basename(f, '.wav'))).map((f) => `_master/${f}`) : []),
-  ...(existsSync(mp3Dir) ? readdirSync(mp3Dir).filter((f) => !f.startsWith('.') && !names.includes(`${basename(f, '.mp3')}.wav`)).map((f) => `_mp3/${f}`) : []),
+  ...FORMATS.flatMap(({ ext, dir }) => (existsSync(dir) ? readdirSync(dir).filter((f) => !f.startsWith('.') && !names.includes(`${basename(f, `.${ext}`)}.wav`)).map((f) => `${basename(dir)}/${f}`) : [])),
 ];
 if (extras.length) console.log(`\nLeft alone, not from this album's songs: ${extras.join(', ')}`);
 
-console.log(`\n${songs.length} songs: ${toCopy.length} ${dryRun ? 'to copy' : 'copied'}, ${upToDate} already up to date, ${encoded} ${dryRun ? 'to encode' : 'MP3s encoded'}, ${warnings} warning(s).`);
+console.log(`\n${songs.length} songs: ${toCopy.length} ${dryRun ? 'to copy' : 'copied'}, ${upToDate} already up to date, ${encoded} ${dryRun ? 'to encode' : 'files encoded'}, ${warnings} warning(s).`);

@@ -69,6 +69,6 @@ Only once the user says the master is approved:
    named after the project: `<project name>.wav` (`PR09-02-timeless.wav`). Create the folder if it doesn't exist.
 2. If a file with that name is already there, copy it to `sessions/<song>/backup/release-<name> (<its date and time>).wav`
    first. It may be a master made before this work.
-3. Copy `bounces/master-final.wav` over it and check it with `cmp`. The file stays the 24-bit WAV bounce; FLAC/MP3 come
-   from the Release tab.
+3. Copy `bounces/master-final.wav` over it and check it with `cmp`. The file stays the 24-bit WAV bounce; `publish-album`
+   makes the album's FLAC and MP3 files from it.
 4. Log the source iteration, destination and backup in `sessions/<song>/session.md`.

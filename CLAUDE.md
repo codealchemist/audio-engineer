@@ -9,7 +9,7 @@ reference track and no issues remain.
 | Skill | Use it for |
 | --- | --- |
 | `album` | the album: which track is next, its folder and settings, progress per track (`sessions/album.md`) |
-| `publish-album` | a finished album's publishing folders: `_master` (WAV copies) and `_mp3` (320 kbps) |
+| `publish-album` | a finished album's publishing folders: `_master` (WAV copies), `_mp3` (320 kbps) and `flac` (lossless) |
 | `mix-loop` | the mixing stage: bounce → analyze → fix tracks → repeat until converged |
 | `master-loop` | the mastering stage on the Stereo Out: correction EQ, glue, limiter to a loudness target |
 | `logic-pro` | operating Logic through computer use: bounce, mixer, plugins, loading presets, safety rules |
@@ -25,7 +25,7 @@ reference track and no issues remain.
 | `node tools/logic-tracks.mjs <project.logicx>` | lists tracks the project reveals, with instrument ids |
 | `node tools/wait-bounce.mjs <wav> --since <ms>` | waits until Logic has finished writing the bounce |
 | `node tools/web-proxy.mjs <wav>` | < 10 MB lossless copy (or loudest excerpt) for uploading to the web app |
-| `node tools/publish-album.mjs <album folder> [--dry-run] [--replace]` | copies release masters to `_master`, encodes them to `_mp3` |
+| `node tools/publish-album.mjs <album folder> [--dry-run] [--replace]` | copies release masters to `_master`, encodes them to `_mp3` and `flac` |
 
 ## Layout
 
