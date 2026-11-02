@@ -9,7 +9,7 @@ reference track and no issues remain.
 | Skill | Use it for |
 | --- | --- |
 | `album` | the album: which track is next, its folder and settings, progress per track (`sessions/album.md`) |
-| `publish-album` | a finished album's publishing folders: `_master` (WAV copies), `_master/flac` (lossless) and `_mp3` (320 kbps) |
+| `publish-album` | a finished album's publishing folders: `_master` (WAV copies), `_master/flac` (16-bit) and `_mp3` (320 kbps) |
 | `mix-loop` | the mixing stage: bounce → analyze → fix tracks → repeat until converged |
 | `master-loop` | the mastering stage on the Stereo Out: correction EQ, glue, limiter to a loudness target |
 | `logic-pro` | operating Logic through computer use: bounce, mixer, plugins, loading presets, safety rules |

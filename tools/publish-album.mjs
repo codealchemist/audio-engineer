@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * Prepares an album's publishing folders: copies every song's release/<song>.wav to _master/<song>.wav,
- * then encodes each _master/*.wav to _mp3/<name>.mp3 (320 kbps CBR) and _master/flac/<name>.flac (lossless, same
- * bit depth and sample rate). Nothing is copied if a song has no release file. A different file already in
- * _master is never overwritten without --replace. Encoded files older than their master are encoded again,
+ * then encodes each _master/*.wav to _mp3/<name>.mp3 (320 kbps CBR) and _master/flac/<name>.flac (16-bit with
+ * TPDF dither, same sample rate). Nothing is copied if a song has no release file. A different file already in
+ * _master is never overwritten without --replace. Encoded files older than their master, and FLACs that aren't 16-bit, are encoded again,
  * and only files made in this run are checked. Other files in the folders are reported and left alone.
  *
  *   node tools/publish-album.mjs <album folder> [--dry-run] [--replace]
@@ -18,6 +18,9 @@ import { parseFlags } from './lib.mjs';
 const MP3_BITRATE = 320;
 const MAX_LENGTH_DIFF = 0.1; // seconds between a master and its MP3
 const PEAK_WARNING = -0.5; // dBTP; encoding overshoots, and a decoded MP3 above this may clip on playback
+const FLAC_BITS = 16;
+const FLAC_SAMPLE_RATE = 44100; // with 16-bit, what distributors such as RouteNote require
+const MAX_DIFFERENCE = -70; // dBFS; a FLAC's difference from its master should be 16-bit dither noise only
 
 const flags = parseFlags(process.argv.slice(2), { booleans: ['dry-run', 'replace'] });
 if (!flags._[0]) {
@@ -34,17 +37,23 @@ const run = (cmd, args) => {
   return { stdout, stderr };
 };
 const probe = (file) => {
-  const { stdout } = run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration,bit_rate:stream=sample_rate,bits_per_sample',
+  const { stdout } = run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration,bit_rate:stream=sample_rate,bits_per_sample,bits_per_raw_sample',
     '-of', 'json', file]);
   const { format, streams: [stream] } = JSON.parse(stdout);
-  return { duration: Number(format.duration), bitRate: Number(format.bit_rate), sampleRate: Number(stream.sample_rate), bits: stream.bits_per_sample };
+  return { duration: Number(format.duration), bitRate: Number(format.bit_rate), sampleRate: Number(stream.sample_rate), bits: stream.bits_per_sample, rawBits: Number(stream.bits_per_raw_sample) };
 };
 const truePeak = (file) => {
   const { stderr } = run('ffmpeg', ['-hide_banner', '-nostats', '-i', file, '-af', 'ebur128=peak=true', '-f', 'null', '-']);
   const peak = stderr.split('True peak:').pop().match(/Peak:\s+(-?[\d.]+|-?inf)/);
   return peak ? Number(peak[1].replace('inf', 'Infinity')) : NaN;
 };
-const audioHash = (file) => run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', file, '-map', '0:a', '-c:a', 'pcm_s32le', '-f', 'md5', '-']).stdout.trim();
+const differencePeak = (a, b) => { // dBFS peak of a minus b; a stereo pair is expected
+  const { stderr } = run('ffmpeg', ['-hide_banner', '-nostats', '-i', a, '-i', b, '-filter_complex',
+    '[0:a]aformat=sample_fmts=dblp[a];[1:a]aformat=sample_fmts=dblp[b];[a][b]amerge=inputs=2,pan=stereo|c0=c0-c2|c1=c1-c3,astats=measure_perchannel=none:measure_overall=Peak_level',
+    '-f', 'null', '-']);
+  const peak = stderr.split('Overall').pop().match(/Peak level dB:\s+(-?[\d.]+|-?inf)/);
+  return peak ? Number(peak[1].replace('inf', 'Infinity')) : NaN;
+};
 const sameFile = (a, b) => statSync(a).size === statSync(b).size && readFileSync(a).equals(readFileSync(b));
 const clock = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
 const wavsIn = (dir) => (existsSync(dir) ? readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.wav')).sort() : []);
@@ -59,7 +68,7 @@ const mp3Dir = join(album, '_mp3');
 const flacDir = join(masterDir, 'flac');
 const FORMATS = [
   { ext: 'mp3', dir: mp3Dir, args: ['-c:a', 'libmp3lame', '-b:a', `${MP3_BITRATE}k`, '-id3v2_version', '3'] },
-  { ext: 'flac', dir: flacDir, args: ['-c:a', 'flac', '-compression_level', '8'] },
+  { ext: 'flac', dir: flacDir, args: ['-af', `aresample=osf=s${FLAC_BITS}:dither_method=triangular`, '-c:a', 'flac', '-sample_fmt', `s${FLAC_BITS}`, '-compression_level', '8'] },
 ];
 const dryRun = flags['dry-run'];
 
@@ -98,7 +107,8 @@ for (const wav of names) {
   const copying = toCopy.some(({ song }) => `${song}.wav` === wav);
   for (const { ext, dir, args } of FORMATS) {
     const output = join(dir, `${name}.${ext}`);
-    if (existsSync(output) && !copying && statSync(output).mtimeMs >= statSync(source).mtimeMs) continue;
+    const wrongDepth = ext === 'flac' && existsSync(output) && probe(output).rawBits !== FLAC_BITS;
+    if (existsSync(output) && !copying && !wrongDepth && statSync(output).mtimeMs >= statSync(source).mtimeMs) continue;
     encoded++;
     if (dryRun) { console.log(`would encode  ${name}.${ext}`); continue; }
     const temp = join(dir, `.${name}.partial.${ext}`); // a stopped encode must not look like a finished file
@@ -127,12 +137,14 @@ for (const { name, ext, source, output } of made) {
     if (peak > PEAK_WARNING) issues.push(`true peak ${peak.toFixed(1)} dBTP`);
     detail = `${Math.round(file.bitRate / 1000)} kbps, ${peak.toFixed(1)} dBTP`;
   } else {
-    const identical = audioHash(source) === audioHash(output);
-    if (!identical) issues.push("audio doesn't match the master");
-    detail = `${Math.round(file.bitRate / 1000)} kbps, ${identical ? 'audio identical to master' : 'audio differs'}`;
+    const difference = differencePeak(source, output);
+    if (file.rawBits !== FLAC_BITS) issues.push(`${file.rawBits}-bit`);
+    if (file.sampleRate !== FLAC_SAMPLE_RATE) issues.push(`${file.sampleRate} Hz, distributors usually require ${FLAC_SAMPLE_RATE} Hz`);
+    if (!(difference <= MAX_DIFFERENCE)) issues.push(`differs from master by ${difference.toFixed(1)} dBFS`);
+    detail = `${file.rawBits}-bit, difference from master ${difference.toFixed(1)} dBFS`;
   }
   warnings += issues.length;
-  rows.push(`${`${name}.${ext}`.padEnd(30)} ${clock(master.duration).padStart(5)}  ${master.bits}-bit ${master.sampleRate} Hz  ${detail}${issues.length ? `  WARNING: ${issues.join('; ')}` : ''}`);
+  rows.push(`${`${name}.${ext}`.padEnd(30)} ${clock(master.duration).padStart(5)}  ${file.sampleRate} Hz  ${detail}${issues.length ? `  WARNING: ${issues.join('; ')}` : ''}`);
 }
 if (rows.length) console.log(`\n${rows.join('\n')}`);
 
