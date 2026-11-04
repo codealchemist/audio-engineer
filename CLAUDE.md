@@ -23,6 +23,9 @@ reference track and no issues remain.
 | `node tools/analyze.mjs <wav> --ref <ref> --stage mix --session sessions/<song>/mix --changes "…"` | full analysis + convergence + iteration log |
 | `node tools/make-preset.mjs --name … --band type:freq:gain[:q]` / `--instrument id` / `--correction` | writes a Channel EQ preset into Logic's preset folder |
 | `node tools/logic-tracks.mjs <project.logicx>` | lists tracks the project reveals, with instrument ids |
+| `node tools/iterate.mjs <wav> --since <ms> --session … --ref … --stage mix\|master --changes "…"` | waits for a bounce, analyzes it into the session and prints ~4 lines (levels, bands, convergence, worst 8-bar lean) |
+| `node tools/stem-mix.mjs init\|match\|optimize\|render\|presets --session sessions/<song> …` | offline mixing from Logic's exported tracks: rebuilds the mix, checks it against Logic's bounce, searches fader/EQ/pan moves, prints the apply list |
+| `node tools/master-plan.mjs <mix-final.wav> --ref … --name "Mixdown correction - <SONG>" --write` | plans the Stereo Out correction EQ and Adaptive Limiter Gain offline from a simulated master |
 | `node tools/wait-bounce.mjs <wav> --since <ms>` | waits until Logic has finished writing the bounce |
 | `node tools/web-proxy.mjs <wav>` | < 10 MB lossless copy (or loudest excerpt) for uploading to the web app |
 | `node tools/publish-album.mjs <album folder> [--dry-run] [--replace]` | copies release masters to `_master`, encodes them to `_master/flac` and `_mp3` |
@@ -38,6 +41,8 @@ reference track and no issues remain.
 ## Ground rules
 
 - Convergence is decided by `tools/analyze.mjs` (exit 0 / `CONVERGED`), not by feel. Report remaining notes honestly.
+- Spend the search locally, not in Logic: find the mix with `tools/stem-mix.mjs` and the master with `tools/master-plan.mjs`,
+  then apply the result in Logic in batched moves and confirm with one bounce each. One Claude session per track (`album`).
 - Never delete anything in the user's project. Bypass instead, save alternatives, and log the values from before each change.
 - Ask the user for creative decisions (arrangement, effects character, automation) and before any download in the browser.
 - Audio stays on this machine. The web app analyzes in the browser and uploads nothing.

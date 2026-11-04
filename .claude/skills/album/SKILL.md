@@ -27,6 +27,14 @@ Progress lives in `sessions/album.md` (from `templates/album.md`). It is local a
 
 A different album replaces `sessions/album.md`. Rename the old file to `sessions/album-<album folder name>.md` first.
 
+## One Claude session per track
+
+Start every track in a **fresh session**. A long conversation re-sends its whole history (every screenshot) on each turn, so
+the tenth track costs far more than the first. Everything the next track needs is on disk: `sessions/album.md`, the
+previous `session.md` files, the skills and `CLAUDE.md`. When a track is finished, propose the next track as a new session
+(`start_session`, fresh context, brief "Continue with the next track: <song>") instead of a Continue button in this
+session; only stay in the same session if the user asks to.
+
 ## "Continue with the next track" / "mix the next track" / "master the next track"
 
 1. Read `sessions/album.md`. The **next track** is the first row in track order whose status isn't `released`.

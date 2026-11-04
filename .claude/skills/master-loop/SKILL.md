@@ -23,11 +23,22 @@ Related skills: `logic-pro`, `mixdown-report`, `fix-playbook`.
    4. Nothing after the limiter except metering.
 4. Bounce path: `sessions/my-song/bounces/master.wav`. Session dir: `sessions/my-song/master`.
 
+**Plan the chain offline first** (saves the extra master bounces): 
+```
+node tools/master-plan.mjs sessions/my-song/bounces/mix-final.wav --ref references/<ref> --genre <g> --target <t> \
+  --name "Mixdown correction - <SONG>" --write [--pre-gain <dB of a Gain plug-in before it>]
+```
+It fits the correction EQ in a closed loop, simulates it with a true-peak limiter, and prints the Adaptive Limiter Gain for
+the target (corrected by the measured 1.2 dB difference to Logic's limiter; above 12 dB the rest goes on the EQ's output gain)
+plus the predicted master. Load that preset, set that Gain, bounce once and run `tools/iterate.mjs --stage master`.
+On PR10-01…03 the prediction was within 0.2 LU and 0.1 dB RMS of Logic's master. Skip the compressor unless the plan says
+the limiter works hard. If the simulated master doesn't converge, fix the mix first.
+
 ## 1. Iterate
 
 ```
-node tools/analyze.mjs sessions/my-song/bounces/master.wav --ref references/<ref>.wav --stage master \
-  --genre <g> --target <t> --session sessions/my-song/master \
+node tools/iterate.mjs sessions/my-song/bounces/master.wav --since <time> --ref references/<ref>.wav --stage master \
+  --genre <g> --target <t> --session sessions/my-song/master --bpm <bpm> \
   --current-correction "$HOME/Music/Audio Music Apps/Plug-In Settings/Channel EQ/Audio Engineer/Mixdown correction.pst" \
   --changes "<what changed>"
 ```

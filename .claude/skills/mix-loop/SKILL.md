@@ -27,19 +27,47 @@ Related skills: `logic-pro` (driving Logic: bounce, mixer, plugins, presets), `m
    Never delete tracks, regions or plugins the user put there. Bypass instead of removing, and log it.
 5. Make sure the Stereo Out has no limiter, Mastering Assistant or maximizer active for the mix stage. Bypass them and log it.
 
+## 0b. Fast path: search the mix offline (default)
+
+Each in-Logic iteration costs dozens of screenshots and clicks. Do the search locally instead, so Logic only gets the
+final moves and one confirming bounce:
+
+1. Bounce the **baseline** in Logic as usual (step 1 below, `--changes "baseline"`).
+2. **Export the tracks** (`logic-pro` › Export all tracks) to `sessions/my-song/stems/audio/`: insert plug-ins on,
+   Volume/Pan Automation **off**, so each file is the track after its inserts and before fader and pan.
+3. `node tools/stem-mix.mjs init sessions/my-song/stems/audio --session sessions/my-song`, then fill in
+   `sessions/my-song/stems/plan.json` from the track map: `fader`, `pan`, `mute`, `instrument`, and `eq` for AE EQs already
+   on a track (`{ "preset": "AE PR13 Drum" }`). Files of tracks without regions are silent and are skipped.
+4. **Match check:** `node tools/stem-mix.mjs match --session sessions/my-song --baseline sessions/my-song/bounces/mix.wav`.
+   It must print `MATCH` (tonal shape within 0.5 dB, level within 0.5 LU, balance within 0.3 dB). If it doesn't, fix the
+   plan (a wrong fader or pan, a muted track) and check for active aux returns: sends to a reverb aux aren't in the files.
+   If the mismatch stays, use the in-Logic loop (step 1) for this song and say why.
+5. **Search:** `node tools/stem-mix.mjs optimize --session sessions/my-song --ref references/<ref> --genre <g> --prefix "AE <SONG>" --bpm <bpm>`.
+   It tries fader, EQ (the Audio Engineer preset library first, then bells, shelves and low cuts that fit each instrument)
+   and bass-to-centre pan moves on a fast model, then renders the result and runs the real analyzer on it. It prints the
+   apply list (also in `stems/apply.txt`) and writes `stems/plan-next.json`. Read the list as an engineer: reject moves you
+   wouldn't make (say so in the log) and rerun with `--max-fader` or `--no-eq` if needed.
+6. `node tools/stem-mix.mjs presets --session sessions/my-song` writes the plan's new Channel EQ presets.
+7. **Apply the whole list in Logic in one pass** (`logic-pro` › Cheap screen work), log every before/after value in
+   `session.md`, bounce once and run `tools/iterate.mjs`. The rebuilt mix predicts the bounce, so it usually converges here.
+   If it doesn't, copy `plan-next.json` over `plan.json` (with any differences you made by hand) and search again.
+
 ## 1. Iterate
+
+The in-Logic loop: for the baseline bounce, the confirming bounce after the fast path, and songs the match check rejects.
 
 For iteration N:
 
-1. **Bounce** to the same path every time (`logic-pro` › Bounce). Note the time first, then run
-   `node tools/wait-bounce.mjs sessions/my-song/bounces/mix.wav --since <time>`.
-2. **Analyze** the full bounce:
+1. **Bounce** to the same path every time (`logic-pro` › Bounce). Note the time first.
+2. **Wait and analyze in one command** (once a screenshot shows Logic is bouncing):
    ```
-   node tools/analyze.mjs sessions/my-song/bounces/mix.wav --ref references/<ref>.wav --stage mix \
-     --genre <g> --target <t> --session sessions/my-song/mix --changes "<what you changed before this bounce>"
+   node tools/iterate.mjs sessions/my-song/bounces/mix.wav --since <time> --ref references/<ref> --stage mix \
+     --genre <g> --session sessions/my-song/mix --bpm <bpm> --changes "<what you changed before this bounce>"
    ```
+   It prints about four lines (levels, bands, convergence, worst 8-bar lean) and saves the full report in
+   `iter-NN/report.txt`, like `tools/analyze.mjs`. Read the report only when the short version isn't enough.
    The first run is the baseline (`--changes "baseline"`). Exit code 0 means converged.
-3. **Check the web app** at the baseline, at the final iteration, and whenever a number surprises you (`mixdown-report` skill).
+3. **Check the web app** only when a number surprises you (`mixdown-report` skill).
    The web app and the analyzer run the same code, so a full-length upload should agree within 0.1 dB.
 4. **Decide** what to change, using `fix-playbook`. Priorities:
    1. Critical: `clipping`, `phase`, `master-true-peak` (not in mix stage).

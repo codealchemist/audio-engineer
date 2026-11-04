@@ -31,7 +31,8 @@ The default key commands below are the usual ones. If a shortcut does nothing, u
    - "Add to Project" / "Add to Audio File Browser": off
 4. Confirm. In the save panel, press ⇧⌘G, type the folder (e.g. `~/dev/audio-engineer/sessions/<song>/bounces`) and
    the file name (`mix.wav` or `master.wav`). Confirm **Replace** when asked. Overwriting the same name every iteration is intentional.
-5. Run `node tools/wait-bounce.mjs <path> --since <time>` until it prints `Ready`.
+5. Once a screenshot shows "Bouncing", run `node tools/iterate.mjs <path> --since <time> …` (`mix-loop` › Iterate): it waits for the
+   file and analyzes it in one step. `tools/wait-bounce.mjs` alone is for bounces you don't analyze.
 
 **Each track has its own bounce folder** (`sessions/<song>/bounces/`). Logic remembers the last folder across projects, so
 the first bounce of a new track opens in the *previous* track's folder. Before that first bounce, point the save panel at
@@ -59,6 +60,27 @@ the project's last bounce folder), then `mv` that file (only the one you created
 Never overwrite or move the user's own bounces. The Stereo Out's plugin bypass buttons are AXCheckBox "bypass"
 elements (`app_ax_find title_contains: bypass`), clickable in the background. File › Project Alternatives isn't readable
 in the background, so make a backup with `cp -cR <project>.logicx sessions/<song>/backup/` after saving.
+
+## Export all tracks (for `tools/stem-mix.mjs`)
+
+1. Click empty track space, ⌘A, then File › Export › All Tracks as Audio Files (⇧⌘E).
+2. In the save panel, ⇧⌘G to `~/dev/audio-engineer/sessions/<song>/stems/audio` (create the folder first with `mkdir -p`).
+   Format WAVE, 24 bit, the project's sample rate, Normalize **Off**, Include Audio Tail on,
+   **Bypass Effect Plug-ins off** (the files must include the inserts) and **Include Volume/Pan Automation off**
+   (the files must exclude fader and pan; `stem-mix.mjs` adds them). The first time, take one screenshot of the dialog and
+   record the control positions here.
+3. Files start at the project start, so they line up with the bounce. Wait with
+   `ls -la sessions/<song>/stems/audio` until the count stops growing (one file per track), not with screenshots.
+4. The files show what each track feeds the Stereo Out, except aux returns (reverb sends). `stem-mix.mjs match` checks this.
+
+## Cheap screen work
+
+Screenshots are the most expensive part of a session. To keep a song within budget:
+- Apply a whole apply list in **one `computer_batch`** per group of moves (all faders, then all presets), with the positions
+  from this skill, and end each batch with one screenshot at `scale: 0.4`, or a `zoom` on just the changed area.
+- Don't screenshot between steps whose positions are known. Re-take one only after something moved the layout (a window opened).
+- Read values by zooming on small regions (`zoom` with `scale: 0.5`) or with `app_ax_find`, not with full screenshots.
+- Check results with tools, not the screen: `tools/iterate.mjs` for bounces, `ls`/`stat` for exported files.
 
 ## Mixer and channel strips
 
