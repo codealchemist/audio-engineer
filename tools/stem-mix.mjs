@@ -27,6 +27,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { basename, extname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { PRESET_DIR, core, decode, parseFlags } from './lib.mjs';
+import { logicEq } from './logic-eq.mjs';
 
 const { analyze } = await core('analyze.js');
 const { evaluate, bandDeviations } = await core('evaluate.js');
@@ -129,8 +130,11 @@ function stemAudio(plan, t) {
   const file = resolve(plan.stemsDir, t.file);
   if (!audioCache.has(file)) {
     const { channels, sampleRate } = decode(file);
-    const mono = channels.length === 1 || isDualMono(channels);
-    audioCache.set(file, { channels: mono ? [channels[0]] : channels, sampleRate, mono });
+    // Logic exports to the project end; the bounce stops at its range (match stores it as plan.lengthSeconds).
+    const len = plan.lengthSeconds ? Math.round(plan.lengthSeconds * sampleRate) : Infinity;
+    const trimmed = channels.map((c) => (c.length > len ? c.subarray(0, len) : c));
+    const mono = trimmed.length === 1 || isDualMono(trimmed);
+    audioCache.set(file, { channels: mono ? [trimmed[0]] : trimmed, sampleRate, mono });
   }
   return audioCache.get(file);
 }
@@ -152,7 +156,7 @@ function render(plan, base) {
     const a = auds[i];
     const [gl, gr] = trackGains(t, base?.tracks[i] ?? t, plan, a.mono);
     if (!gl && !gr) return;
-    const sections = eqsOf(t.eq).flatMap((eq) => eqSections(eq, fs));
+    const sections = eqsOf(t.eq).flatMap((eq) => eqSections(logicEq(eq), fs)); // as Logic plays the preset
     const chans = a.channels.map((c) => (sections.length ? applySections(Float32Array.from(c), sections) : c));
     const L = chans[0], R = chans[1] ?? chans[0];
     for (let k = 0; k < L.length; k++) { mix[0][k] += gl * L[k]; mix[1][k] += gr * R[k]; }
@@ -263,7 +267,7 @@ function eqPowerPerThird(eqs, fs) {
   return THIRD_OCTAVES.map((fc) => {
     const fr = [-2, -1, 0, 1, 2].map((k) => fc * 2 ** (k / 15));
     const db = fr.map(() => 0);
-    for (const eq of eqs) eqResponse(eq, fr, fs).forEach((v, i) => { db[i] += v; });
+    for (const eq of eqs) eqResponse(logicEq(eq), fr, fs).forEach((v, i) => { db[i] += v; });
     return db.reduce((s, v) => s + 10 ** (v / 10), 0) / fr.length;
   });
 }
@@ -322,8 +326,17 @@ function cmdInit() {
 function cmdMatch() {
   need(flags.baseline, '--baseline <Logic mix bounce> is required.');
   const plan = loadPlan(flags.plan);
+  const baseline = decode(flags.baseline);
+  const seconds = Math.round((baseline.channels[0].length / baseline.sampleRate) * 1000) / 1000;
+  if (plan.lengthSeconds !== seconds) {
+    // Every later render, search and verification uses the bounce's length, not the export's.
+    plan.lengthSeconds = seconds;
+    const path = resolve(stemsDir, flags.plan ?? 'plan.json');
+    const saved = JSON.parse(readFileSync(path, 'utf8'));
+    writeFileSync(path, JSON.stringify({ ...saved, lengthSeconds: seconds }, null, 2) + '\n');
+  }
   const mix = render(plan, plan);
-  const { channels: bch, sampleRate } = decode(flags.baseline);
+  const { channels: bch, sampleRate } = baseline;
   const n = Math.min(mix.channels[0].length, bch[0].length);
   const cut = (chs) => chs.map((c) => c.subarray(0, n));
   const a = analyze(cut(mix.channels), mix.sampleRate), b = analyze(cut(bch), sampleRate);

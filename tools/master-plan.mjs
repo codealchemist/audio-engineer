@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * Plans the Stereo Out master offline from the converged mix bounce, so Logic needs one master bounce instead of
- * several: picks the "Mixdown correction" Channel EQ (closed loop, re-measured after each fit) and the Adaptive
- * Limiter Gain that lands on the loudness target, by simulating EQ → limiter on the mix.
+ * several: fits the "Mixdown correction" Channel EQ in a closed loop toward every band within ±1 dB (filtering as
+ * Logic plays the preset, see logic-eq.mjs), predicts the master's bands from the EQ'd mix plus Logic's limiter
+ * tilt, and finds the Adaptive Limiter Gain for the loudness target with a simulated limiter.
  *
  *   node tools/master-plan.mjs <mix.wav> --ref <reference> [--genre rock] [--target streaming]
  *       [--name "Mixdown correction - PR10-04"] [--write] [--ceiling -1.2] [--pre-gain dB] [--out master-sim.wav]
@@ -18,16 +19,18 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { PRESET_DIR, core, decode, parseFlags } from './lib.mjs';
+import { logicEq } from './logic-eq.mjs';
 
 const { analyze } = await core('analyze.js');
 const { evaluate } = await core('evaluate.js');
 const { BANDS } = await core('profiles.js');
-const { suggestMasterEq } = await core('eq/mastering.js');
+const { SUBSONIC_CUT } = await core('eq/mastering.js');
+const { combineCorrection } = await core('eq/correction.js');
 const { eqSections } = await core('eq/response.js');
 const { applySections } = await core('dsp/biquad.js');
 const { limit } = await core('master/limiter.js');
 const { measureLoudness } = await core('loudness.js');
-const { eqLines, normalizeEq } = await core('eq/channel-eq.js');
+const { eqLines, normalizeEq, buildEq } = await core('eq/channel-eq.js');
 const { encodeChannelEq, decodeChannelEq, presetFileName } = await core('eq/pst.js');
 
 /**
@@ -36,6 +39,15 @@ const { encodeChannelEq, decodeChannelEq, presetFileName } = await core('eq/pst.
  * 1.2–1.3 dB. The plan asks Logic for this much more Gain than the simulation used.
  */
 const LIMITER_BIAS = 1.2;
+/**
+ * Logic's Adaptive Limiter hardly changes the tonal balance; Mixdown Report's limiter takes up to 1 dB of low end when
+ * it works hard. So the master's bands are predicted from the EQ'd mix before the limiter plus Logic's mean tilt,
+ * measured on the five PR10 masters (real − pre-limiter, per band; spread 0.04–0.3 dB). Loudness and true peak still
+ * come from the simulated limiter.
+ */
+const LOGIC_LIMITER_TILT = [-0.3, -0.15, 0.15, 0.1, 0.15, 0.15, 0.15];
+const BAND_GOAL = 1;   // plan for every band within ±1 dB, so model error can't push the bounce past ±2
+const RMS_GOAL = 0.6;
 const MAX_LIMITER_GAIN = 12; // Adaptive Limiter's Gain range; the rest goes on the EQ's output gain
 
 const flags = parseFlags(process.argv.slice(2), { booleans: ['write'] });
@@ -58,7 +70,7 @@ const mix = raw.length === 1 ? [raw[0], raw[0]] : raw;
 if (preGain !== 1) for (const c of mix) for (let i = 0; i < c.length; i++) c[i] *= preGain;
 
 const withEq = (eq) => {
-  const sections = eqSections(eq, fs);
+  const sections = eqSections(logicEq(eq), fs); // as Logic plays the preset
   return mix.map((c) => applySections(Float32Array.from(c), sections));
 };
 const limited = (chs, gainDb) => {
@@ -66,12 +78,17 @@ const limited = (chs, gainDb) => {
   limit(out, fs, { ceilingDb: ceiling, inputGainDb: gainDb });
   return out;
 };
-const judge = (a) => {
+/** Predicted master deviations: the EQ'd mix before the limiter plus Logic's limiter tilt. */
+const predictDevs = (preAnalysis) => {
+  const ev = evaluate(preAnalysis, settings, { reference, file: { lossy: false } });
+  return ev.deviations.map((d, i) => d + LOGIC_LIMITER_TILT[i]);
+};
+const stats = (devs) => ({ maxAbs: Math.max(...devs.map(Math.abs)), rms: Math.sqrt(devs.reduce((s, d) => s + d * d, 0) / devs.length) });
+const judge = (a, devs) => {
   const ev = evaluate(a, settings, { reference, file: { lossy: false } });
-  const devs = ev.deviations;
-  const maxAbs = Math.max(...devs.map(Math.abs));
-  const rms = Math.sqrt(devs.reduce((s, d) => s + d * d, 0) / devs.length);
-  const issues = ev.findings.filter((f) => f.severity !== 'note').map((f) => f.id);
+  const { maxAbs, rms } = stats(devs);
+  const issues = ev.findings.filter((f) => f.severity !== 'note' && !f.id.startsWith('band-')).map((f) => f.id);
+  BANDS.forEach((b, i) => { if (Math.abs(devs[i]) > ev.tolerance) issues.push(`band-${b.id}-${devs[i] > 0 ? 'high' : 'low'}`); });
   const ok = maxAbs <= ev.tolerance && rms <= 1 && !issues.length && Math.abs(a.integrated - ev.target.lufs) <= 0.5 && a.truePeakDb <= ev.target.truePeak;
   return { ev, devs, rms, issues, ok };
 };
@@ -95,18 +112,19 @@ if (flags.eq) {
   if (!existsSync(path)) throw new Error(`Preset not found: ${path}`);
   eq = decodeChannelEq(readFileSync(path)).eq;
 } else {
-  // Closed loop: fit, apply, re-measure, update the same EQ (like the in-Logic master loop, without bounces).
-  let current = null;
-  for (let round = 0; round < 4; round++) {
-    const chs = current ? withEq(current) : mix;
-    const a = analyze(chs, fs);
-    const ev = evaluate(a, settings, { reference, file: { lossy: false } });
-    if (current && ev.deviations.every((d) => Math.abs(d) <= 1)) break;
-    const s = suggestMasterEq(ev, { analysis: a, current });
-    if (s.unchanged) break;
-    current = normalizeEq(s.eq);
+  // Closed loop: predict, correct the whole EQ toward the remaining deviations, predict again (like the in-Logic
+  // master loop, without bounces). Keeps the best round.
+  let current = normalizeEq(buildEq([SUBSONIC_CUT]).eq);
+  let best = null;
+  for (let round = 0; round < 6; round++) {
+    const devs = predictDevs(analyze(withEq(current), fs));
+    const st = stats(devs);
+    if (!best || st.rms < best.rms - 0.02) best = { eq: current, ...st };
+    if (st.maxAbs <= BAND_GOAL && st.rms <= RMS_GOAL) break;
+    const adjustment = devs.map((d) => (Math.abs(d) > 0.4 ? -0.8 * d : 0));
+    current = normalizeEq(combineCorrection(current, adjustment));
   }
-  eq = current ?? normalizeEq(suggestMasterEq(evaluate(analyze(mix, fs), settings, { reference, file: {} }), {}).eq);
+  eq = best.eq;
 }
 
 const eqd = withEq(eq);
@@ -122,14 +140,14 @@ if (logicGain > MAX_LIMITER_GAIN) {
 
 const master = limited(extraOutput ? withEq(eq) : eqd, logicGain - bias);
 const a = analyze(master, fs);
-const j = judge(a);
+const j = judge(a, predictDevs(analyze(extraOutput ? withEq(eq) : eqd, fs)));
 
 const name = flags.name ?? 'Mixdown correction';
 const lines = [
   `Correction EQ "${name}": ${eqLines(eq).join(' · ')}`,
   `Adaptive Limiter: Gain ${logicGain.toFixed(1)} · Out Ceiling ${ceiling} · True Peak on${extraOutput ? ` (Gain is maxed; +${extraOutput} dB on the EQ's output gain)` : ''}`,
-  `Simulated master: ${r1(a.integrated)} LUFS · ${r1(a.truePeakDb)} dBTP · PLR ${r1(a.plr)} · ${BANDS.map((b, i) => `${b.name} ${sgn(j.devs[i])}`).join(', ')} · RMS ${j.rms.toFixed(2)}`,
-  `${j.ok ? 'CONVERGED' : 'not converged'} (simulated) · issues: ${j.issues.join(', ') || 'none'}`,
+  `Predicted master: ${r1(a.integrated)} LUFS · ${r1(a.truePeakDb)} dBTP · PLR ${r1(a.plr)} · ${BANDS.map((b, i) => `${b.name} ${sgn(j.devs[i])}`).join(', ')} · RMS ${j.rms.toFixed(2)}`,
+  `${j.ok ? 'CONVERGED' : 'not converged'} (predicted) · issues: ${j.issues.join(', ') || 'none'}`,
 ];
 console.log(lines.join('\n'));
 

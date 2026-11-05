@@ -39,7 +39,8 @@ final moves and one confirming bounce:
    `sessions/my-song/stems/plan.json` from the track map: `fader`, `pan`, `mute`, `instrument`, and `eq` for AE EQs already
    on a track (`{ "preset": "AE PR13 Drum" }`). Files of tracks without regions are silent and are skipped.
 4. **Match check:** `node tools/stem-mix.mjs match --session sessions/my-song --baseline sessions/my-song/bounces/mix.wav`.
-   It must print `MATCH` (tonal shape within 0.5 dB, level within 0.5 LU, balance within 0.3 dB). If it doesn't, fix the
+   It must print `MATCH` (tonal shape within 0.5 dB, level within 0.5 LU, balance within 0.3 dB). It also stores the
+   bounce's length in the plan (`lengthSeconds`), because Logic exports tracks to the project end. If it doesn't, fix the
    plan (a wrong fader or pan, a muted track) and check for active aux returns: sends to a reverb aux aren't in the files.
    If the mismatch stays, use the in-Logic loop (step 1) for this song and say why.
 5. **Search:** `node tools/stem-mix.mjs optimize --session sessions/my-song --ref references/<ref> --genre <g> --prefix "AE <SONG>" --bpm <bpm>`.

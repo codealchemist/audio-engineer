@@ -108,8 +108,10 @@ Screenshots are the most expensive part of a session. To keep a song within budg
    If it isn't listed yet, close and reopen the menu or the plugin window.
 4. Screenshot the EQ and check that the bands match what the tool printed. Close the plugin window.
 
-Without a Logic calibration, presets use the app's filter model. If a bounce shows the EQ acting stronger or weaker
-than predicted, run the web app's Calibrate tab once (it needs the user, because it involves downloads).
+The offline tools (`stem-mix.mjs`, `master-plan.mjs`) filter through `tools/logic-eq.mjs`, which models how Channel
+EQ really plays a preset (cut bells narrower than their Q: Q × 10^(|gain|/24); cut shelves Q × 0.84), measured on
+PR10-04. If a bounce stops matching a rebuilt plan (`stem-mix.mjs match --plan <plan> --baseline <bounce>`), re-measure
+and update those constants rather than working around them.
 
 ## Other common actions
 
