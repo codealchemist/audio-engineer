@@ -10,6 +10,7 @@ reference track and no issues remain.
 | --- | --- |
 | `album` | the album: which track is next, its folder and settings, progress per track (`sessions/album.md`) |
 | `publish-album` | a finished album's publishing folders: `_master` (WAV copies), `_master/flac` (16-bit) and `_mp3` (320 kbps) |
+| `album-cover` | cover proposals: 3 concepts from the album and song titles, 4 images each (1024×1024) in `<album>/_cover` |
 | `mix-loop` | the mixing stage: bounce → analyze → fix tracks → repeat until converged |
 | `master-loop` | the mastering stage on the Stereo Out: correction EQ, glue, limiter to a loudness target |
 | `logic-pro` | operating Logic through computer use: bounce, mixer, plugins, loading presets, safety rules |
@@ -29,6 +30,8 @@ reference track and no issues remain.
 | `node tools/wait-bounce.mjs <wav> --since <ms>` | waits until Logic has finished writing the bounce |
 | `node tools/web-proxy.mjs <wav>` | < 10 MB lossless copy (or loudest excerpt) for uploading to the web app |
 | `node tools/publish-album.mjs <album folder> [--dry-run] [--replace]` | copies release masters to `_master`, encodes them to `_master/flac` and `_mp3` |
+| `tools/clip-image.sh <out.png>` | saves the clipboard image (Gemini's Copy image) as a 1024×1024 PNG, no download dialog |
+| `node tools/album-cover.mjs <_cover/concepts.json> [--dry-run] [--only <id>] [--replace]` | generates 4 cover images per concept (1024×1024 PNG) with OpenAI or Google, plus contact sheets |
 
 ## Layout
 
